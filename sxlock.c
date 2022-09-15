@@ -369,7 +369,6 @@ main(int argc, char** argv) {
 
     if (!parse_options(argc, argv))
         exit(EXIT_FAILURE);
-    printf("Len of pass is %d\n", strlen(opt_custompass));
     /* register signal handler function */
     if (signal (SIGINT, handle_signal) == SIG_IGN)
         signal (SIGINT, SIG_IGN);
