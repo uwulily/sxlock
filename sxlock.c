@@ -303,13 +303,13 @@ parse_options(int argc, char** argv)
                     "   -v: show version info and exit\n"
                     "   -l: derange the password length indicator\n"
                     "   -d: do not handle DPMS\n"
-                    "   -pc passchars: characters used to obfuscate the password\n"
+                    "   -c passchars: characters used to obfuscate the password\n"
                     "   -p password: custom password to use\n"
                     "   -f font name (fontconfig pattern string\n"
                     "   -u username: user name to show\n"
                 );
                 break;
-            case 'pc':
+            case 'c':
                 if(strlen(optarg) >= 1) {
                     opt_passchar = optarg;
                 }
