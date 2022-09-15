@@ -1,2 +1,3 @@
 sxlock
 *.o
+.vscode

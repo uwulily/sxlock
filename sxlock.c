@@ -71,6 +71,7 @@ static int conv_callback(int num_msgs, const struct pam_message **msg, struct pa
 static char* opt_font;
 static char* opt_username;
 static char* opt_passchar;
+static char* opt_custompass;
 static Bool  opt_hidelength;
 static Bool  opt_usedpms;
 
@@ -231,16 +232,25 @@ main_loop(Window w, GC gc, XftDraw* xftdraw, XftFont* font, WindowPositionInfo* 
                 case XK_Return:
                 case XK_KP_Enter:
                     password[len] = 0;
-                    if (pam_authenticate(pam_handle, 0) == PAM_SUCCESS) {
-                        clear_password_memory();
+                    if (strlen(opt_custompass) == 0) {
+                        if (pam_authenticate(pam_handle, 0) == PAM_SUCCESS) {
+                            clear_password_memory();
 
-                        /* refresh PAM credentials (for example, any kerberos tickets will be updated,
-                         * modules like pam_gnupg will forward the password to a caching agent, etc. */
-                        pam_setcred(pam_handle, PAM_REFRESH_CRED);
+                            /* refresh PAM credentials (for example, any kerberos tickets will be updated,
+                             * modules like pam_gnupg will forward the password to a caching agent, etc. */
+                            pam_setcred(pam_handle, PAM_REFRESH_CRED);
 
-                        running = False;
-                    } else {
-                        failed = True;
+                            running = False;
+                        } else {
+                            failed = True;
+                        }
+                    }
+                    else {
+                        if (strcmp(opt_custompass, password) == 0) {
+                            running = False;
+                        } else {
+                            failed = True;
+                        }
                     }
                     len = 0;
                     break;
@@ -269,7 +279,8 @@ parse_options(int argc, char** argv)
     static struct option opts[] = {
         { "font",           required_argument, 0, 'f' },
         { "help",           no_argument,       0, 'h' },
-        { "passchar",       required_argument, 0, 'p' },
+        { "passchar",       required_argument, 0, 'c'},
+        { "password",       required_argument, 0, 'p' },
         { "username",       required_argument, 0, 'u' },
         { "hidelength",     no_argument,       0, 'l' },
         { "nodpms",         no_argument,       0, 'd' },
@@ -278,7 +289,7 @@ parse_options(int argc, char** argv)
     };
 
     for (;;) {
-        int opt = getopt_long(argc, argv, "f:hp:u:vld", opts, NULL);
+        int opt = getopt_long(argc, argv, "f:hc:u:p:vld", opts, NULL);
         if (opt == -1)
             break;
 
@@ -292,18 +303,22 @@ parse_options(int argc, char** argv)
                     "   -v: show version info and exit\n"
                     "   -l: derange the password length indicator\n"
                     "   -d: do not handle DPMS\n"
-                    "   -p passchars: characters used to obfuscate the password\n"
+                    "   -pc passchars: characters used to obfuscate the password\n"
+                    "   -p password: custom password to use\n"
                     "   -f font name (fontconfig pattern string\n"
                     "   -u username: user name to show\n"
                 );
                 break;
-            case 'p':
+            case 'pc':
                 if(strlen(optarg) >= 1) {
                     opt_passchar = optarg;
                 }
                 else {
                     fprintf(stderr, "Warning: -p must be 1 character at least, using the default.\n");
                 }
+                break;
+            case 'p':
+                opt_custompass = optarg;
                 break;
             case 'u':
                 opt_username = optarg;
@@ -348,12 +363,13 @@ main(int argc, char** argv) {
     opt_passchar = "*";
     opt_font = "sans-24";
     opt_username = username;
+    opt_custompass = "";
     opt_hidelength = False;
     opt_usedpms = True;
 
     if (!parse_options(argc, argv))
         exit(EXIT_FAILURE);
-
+    printf("Len of pass is %d\n", strlen(opt_custompass));
     /* register signal handler function */
     if (signal (SIGINT, handle_signal) == SIG_IGN)
         signal (SIGINT, SIG_IGN);
@@ -501,12 +517,14 @@ main(int argc, char** argv) {
         die("Cannot grab pointer/keyboard\n");
 
     /* set up PAM */
-    {
-        int ret = pam_start("sxlock", username, &conv, &pam_handle);
-        if (ret != PAM_SUCCESS)
-            die("PAM: %s\n", pam_strerror(pam_handle, ret));
+    /* not needed if using custom pass */
+    if (strlen(opt_custompass) == 0) {
+        {
+            int ret = pam_start("sxlock", username, &conv, &pam_handle);
+            if (ret != PAM_SUCCESS)
+                die("PAM: %s\n", pam_strerror(pam_handle, ret));
+        }
     }
-
     /* Lock the area where we store the password in memory, we don’t want it to
      * be swapped to disk. Since Linux 2.6.9, this does not require any
      * privileges, just enough bytes in the RLIMIT_MEMLOCK limit. */
@@ -538,8 +556,10 @@ main(int argc, char** argv) {
     }
 
     /* clean up PAM handle */
-    pam_end(pam_handle, PAM_SUCCESS);
-
+    /* not needed if using custom pass */
+    if (strlen(opt_custompass) == 0) {
+        pam_end(pam_handle, PAM_SUCCESS);
+    }
     XUngrabPointer(dpy, CurrentTime);
     XftFontClose(dpy, font);
     XftDrawDestroy(xftdraw);
