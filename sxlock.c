@@ -41,6 +41,7 @@
 #include <X11/extensions/dpms.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xft/Xft.h>
+#include <xkbcommon/xkbcommon-x11.h>
 #include <security/pam_appl.h>
 
 #ifdef __GNUC__
@@ -74,6 +75,7 @@ static char* opt_passchar;
 static char* opt_custompass;
 static Bool  opt_hidelength;
 static Bool  opt_usedpms;
+static Bool opt_passmediakeys;
 
 /* need globals for signal handling */
 Display *dpy;
@@ -155,7 +157,7 @@ handle_signal(int sig) {
 }
 
 void
-main_loop(Window w, GC gc, XftDraw* xftdraw, XftFont* font, WindowPositionInfo* info, char passdisp[256], char* username, XftColor white, XftColor red, Bool hidelength) {
+main_loop(Window w, GC gc, XftDraw* xftdraw, XftFont* font, WindowPositionInfo* info, char passdisp[256], char* username, XftColor white, XftColor red, Bool hidelength, Window root) {
     XEvent event;
     KeySym ksym;
 
@@ -262,6 +264,20 @@ main_loop(Window w, GC gc, XftDraw* xftdraw, XftFont* font, WindowPositionInfo* 
                     if (len)
                         --len;
                     break;
+                
+                case XKB_KEY_XF86AudioPlay:
+                case XKB_KEY_XF86AudioPause:
+                case XKB_KEY_XF86AudioStop:
+                case XKB_KEY_XF86AudioPrev:
+                case XKB_KEY_XF86AudioNext:
+                case XKB_KEY_XF86AudioMute:
+                case XKB_KEY_XF86AudioLowerVolume:
+                case XKB_KEY_XF86AudioRaiseVolume:
+                    if (opt_passmediakeys) {
+                        XSendEvent(dpy, root, True, 4,  &event);
+                        /* xcb_send_event(conn, 1, screen->root, XCB_EVENT_MASK_BUTTON_PRESS, (char *)event); */
+                    }
+                    break;
                 default:
                     if (isprint(inputChar) && (len + sizeof(inputChar) < sizeof password)) {
                         memcpy(password + len, &inputChar, sizeof(inputChar));
@@ -284,12 +300,13 @@ parse_options(int argc, char** argv)
         { "username",       required_argument, 0, 'u' },
         { "hidelength",     no_argument,       0, 'l' },
         { "nodpms",         no_argument,       0, 'd' },
+        { "mediakeys",      no_argument,       0, 'm' },
         { "version",        no_argument,       0, 'v' },
         { 0, 0, 0, 0 },
     };
 
     for (;;) {
-        int opt = getopt_long(argc, argv, "f:hc:u:p:vld", opts, NULL);
+        int opt = getopt_long(argc, argv, "f:hc:u:p:vldm", opts, NULL);
         if (opt == -1)
             break;
 
@@ -303,6 +320,7 @@ parse_options(int argc, char** argv)
                     "   -v: show version info and exit\n"
                     "   -l: derange the password length indicator\n"
                     "   -d: do not handle DPMS\n"
+                    "   -m: pass media keys\n"
                     "   -c passchars: characters used to obfuscate the password\n"
                     "   -p password: custom password to use\n"
                     "   -f font name (fontconfig pattern string\n"
@@ -328,6 +346,9 @@ parse_options(int argc, char** argv)
                 break;
             case 'd':
                 opt_usedpms = False;
+                break;
+            case 'm':
+                opt_passmediakeys = True;
                 break;
             case 'v':
                 die(PROGNAME"-"VERSION", © 2013 Jakub Klinkovský\n");
@@ -366,6 +387,7 @@ main(int argc, char** argv) {
     opt_custompass = "";
     opt_hidelength = False;
     opt_usedpms = True;
+    opt_passmediakeys = False;
 
     if (!parse_options(argc, argv))
         exit(EXIT_FAILURE);
@@ -545,7 +567,7 @@ main(int argc, char** argv) {
     }
 
     /* run main loop */
-    main_loop(w, gc, xftdraw, font, &info, passdisp, opt_username, white, red, opt_hidelength);
+    main_loop(w, gc, xftdraw, font, &info, passdisp, opt_username, white, red, opt_hidelength, root);
 
     /* restore dpms settings */
     if (using_dpms) {
